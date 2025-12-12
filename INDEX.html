@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配方查詢 (V36.0 - 最終優化版)</title>
+    <style>
+        /* --- Apple 風格基礎設定 --- */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", sans-serif; 
+            background-color: #f2f2f7; padding: 15px; color: #1c1c1e; 
+        }
+        .container { 
+            max-width: 900px; 
+            margin: 0 auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); 
+        }
+        h2 { color: #1c1c1e; margin-bottom: 25px; font-weight: 700; font-size: 26px; text-align: center; }
+        
+        /* 區塊通用 */
+        .section-card { margin-bottom: 30px; border: 1px solid #e5e5ea; border-radius: 12px; padding: 20px; background: #fff; }
+        
+        /* 搜尋控制列 */
+        .query-controls-bar {
+            display: flex; gap: 15px; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #f0f0f0; 
+        }
+        .search-input { 
+            flex-grow: 1; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #d1d1d6; 
+        }
+
+        /* 按鈕排版 */
+        .part-buttons { flex-grow: 1; display: flex; gap: 5px; overflow-x: auto; white-space: nowrap; padding-bottom: 5px; }
+        
+        #paintInputButtons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 15px;}
+        .btn-part { 
+            padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 15px; 
+            cursor: pointer; white-space: nowrap; text-align: center; min-width: 70px; flex: 1;
+        }
+        .btn-part.active { background: #007aff; color: white; border-color: #007aff; }
+
+        /* 結果表格 */
+        .result-table { width: 100%; border-collapse: collapse; }
+        .result-table th { text-align: left; padding: 10px; background: #f2f2f7; font-size: 13px; color: #555; }
+        .result-table td { padding: 10px; border-bottom: 1px solid #eee; font-size: 15px; }
+        .highlight-val { color: #007aff; font-weight: 700; }
+        .cost-val { color: #ff3b30; font-weight: 600; font-size: 14px; }
+        .total-row td { border-top: 2px solid #007aff; font-weight: bold; background-color: #f9f9fd; color: #1c1c1e; }
+
+        /* 管理按鈕 */
+        .btn-manage { 
+            background-color: #34c759; color: white; padding: 12px 25px; border: none; border-radius: 10px; 
+            font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 20px;
+        }
+
+        /* Modal */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: white; margin: 2% auto; padding: 20px; border-radius: 16px; width: 95%; max-width: 950px; max-height: 90vh; overflow-y: auto; }
+        
+        .tab-group { display: flex; gap: 5px; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; overflow-x: auto; }
+        .tab-btn { padding: 8px 15px; background: #f2f2f7; border: none; border-radius: 8px; cursor: pointer; color: #888; font-weight: 600; white-space: nowrap; }
+        .tab-btn.active { background: #007aff; color: white; }
+        
+        /* 輸入項目 (支援重工欄位) */
+        .input-row-complex { 
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 8px 0; border-bottom: 1px dashed #e5e5ea; 
+        }
+        .input-label { width: 80px; font-weight: 600; font-size: 14px; }
+        .input-group-sub { display: flex; gap: 5px; align-items: center; }
+        .input-sub-field { width: 70px; padding: 5px; border: 1px solid #d1d1d6; border-radius: 6px; text-align: right; }
+        .sub-label { font-size: 12px; color: #888; margin-right: 2px; }
+        .rework-rate { font-size: 12px; color: #ff3b30; width: 50px; text-align: right; }
+
+        /* 按鈕組 */
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; max-width: 600px; margin-left: auto; margin-right: auto; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; color: white; }
+        .btn-add { background-color: #34c759; } 
+        .btn-submit { background-color: #007aff; }
+        .btn-modify-save { background-color: #ffc200; color: #1c1c1e;} 
+        .btn-clear-daily { background-color: #ff3b30; }
+
+        /* 管理表格 */
+        .manage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .manage-table th { background: #f2f2f7; padding: 8px; text-align: left; }
+        .manage-table td { padding: 8px; border-bottom: 1px solid #eee; }
+        
+        .comp-blue { color: #007aff; font-weight: 700; }
+        
+        .cost-input-group { display: flex; gap: 5px; align-items: center; }
+        .cost-input { width: 100px; padding: 5px; border: 1px solid #ddd; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>配方查詢 <span style="font-size:14px; color:#888;">(V36.0 Final)</span></h2>
+
+    <div class="section-card">
+        <div class="query-controls-bar">
+            <span style="font-weight:700; color:#007aff; white-space:nowrap;">面漆查詢</span>
+            <input list="paintOptions" id="paintSearchInput" class="search-input" placeholder="輸入或選擇面漆型號 (例如 A8...)" oninput="queryRecipe()">
+            <datalist id="paintOptions"></datalist>
+        </div>
+
+        <div class="part-buttons" id="partBtnGroup" style="margin-bottom: 20px;"></div>
+
+        <table class="result-table">
+            <thead>
+                <tr>
+                    <th width="35%">配方成分</th>
+                    <th width="30%">單件用量 (KG)</th>
+                    <th width="35%">預估成本 (NTD)</th>
+                </tr>
+            </thead>
+            <tbody id="recipeResultBody">
+                <tr><td colspan="3" style="text-align:center; color:#999; padding:20px;">請輸入型號並選擇部件</td></tr>
+            </tbody>
+            <tfoot id="recipeResultFoot" style="display:none;">
+                <tr class="total-row">
+                    <td>總計成本</td>
+                    <td></td>
+                    <td id="totalCostDisplay">$0.0</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    
+    <button class="btn-manage" onclick="openManageModal()">⚙️ 數據管理中心</button>
+</div>
+
+<!-- Modal -->
+<div id="manageModal" class="modal">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <span style="font-size:18px; font-weight:bold;">數據管理中心</span>
+            <span onclick="closeModal()" style="cursor:pointer; font-size:20px;">✕</span>
+        </div>
+        
+        <div class="tab-group">
+            <button class="tab-btn active" onclick="switchTab('tabInput')">每日輸入 (含重工)</button>
+            <button class="tab-btn" onclick="switchTab('tabHistory')">歷史紀錄</button>
+            <button class="tab-btn" onclick="switchTab('tabCost')">成本單價</button>
+            <button class="tab-btn" onclick="switchTab('tabPaint')">面漆清單</button>
+            <button class="tab-btn" onclick="switchTab('tabRule')">製程規則</button>
+            <button class="tab-btn" onclick="switchTab('tabRatio')">基準倍率</button>
+        </div>
+
+        <!-- 每日輸入 Tab -->
+        <div id="tabInput" style="display:block;">
+            <div style="text-align:center; margin-bottom:15px; background:#f9f9f9; padding:8px; border-radius:8px;">
+                <label>日期: </label>
+                <input type="date" id="inputDate" style="padding:5px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+
+            <div id="paintInputButtons"></div>
+            
+            <div style="text-align:center; margin-bottom:20px;">
+                <label style="font-weight:bold;">總使用量 (KG): </label>
+                <input type="number" id="in_paint_total" placeholder="0" step="0.01" style="width:100px; padding:6px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+
+            <div style="max-width: 600px; margin: 0 auto; border: 1px solid #e5e5ea; border-radius: 8px; padding: 15px;">
+                <h4 style="margin:0 0 10px 0; color:#555;">生產數據</h4> <!-- ITEM 2: Title change -->
+                <div id="partInputList"></div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-add" id="btnAddRecord" onclick="addTodayRecord()">⬇️ 加入今日清單</button>
+                <button class="btn btn-modify-save" id="btnUpdateRecord" style="display:none;" onclick="updateModifiedRecord()">🔄 更新此紀錄</button>
+                <button class="btn btn-clear-daily" onclick="clearTodayInput()">🗑️ 清除</button>
+            </div>
+
+            <div id="todayListDisplay" style="margin-top:15px; background:#f2f2f7; padding:10px; border-radius:8px; min-height:40px; text-align:center; color:#888;">今日尚未加入數據</div>
+
+            <div style="text-align:center; margin-top:20px;">
+                <button class="btn btn-submit" style="max-width:300px;" onclick="submitToHistory()">🔄 確認更新並計算</button>
+            </div>
+            <div id="statusMessage" style="text-align:center; margin-top:10px; height:20px; font-weight:bold;"></div>
+        </div>
+
+        <!-- 歷史紀錄 Tab -->
+        <div id="tabHistory" style="display:none;">
+            <div style="max-height:60vh; overflow-y:auto;">
+                <table class="manage-table">
+                    <thead><tr><th>日期</th><th>明細表</th><th width="100">操作</th></tr></thead> <!-- ITEM 4: Header change -->
+                    <tbody id="historyTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- 成本設定 Tab -->
+        <div id="tabCost" style="display:none;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <h4>配方單價</h4> <!-- ITEM 5: Sub-title change -->
+                    <table class="manage-table">
+                        <thead><tr><th>成分</th><th>單價 ($/kg)</th></tr></thead>
+                        <tbody id="baseCostBody"></tbody>
+                    </table>
+                </div>
+                <div>
+                    <h4>面漆單價</h4> <!-- ITEM 5: Sub-title change -->
+                    <div style="display:flex; gap:5px; margin-bottom:10px;">
+                        <input list="paintOptions" id="costPaintName" placeholder="選擇或輸入面漆型號" style="flex:1; padding:5px; border:1px solid #ddd;">
+                        <input type="number" id="costPaintPrice" placeholder="單價" style="width:70px; padding:5px; border:1px solid #ddd;">
+                        <button onclick="addTopcoatPrice()" style="background:#34c759; color:white; border:none; padding:5px 10px; border-radius:4px;">新增</button>
+                    </div>
+                    <div style="max-height:40vh; overflow-y:auto; border:1px solid #eee; border-radius:4px;">
+                        <table class="manage-table">
+                            <thead><tr><th>面漆型號</th><th>單價</th><th>刪除</th></tr></thead>
+                            <tbody id="topcoatCostBody"></tbody>
+                        </table>
+                    </div>
+                    <p style="font-size:12px; color:#666;">* 若未設定個別價格，將使用左側「面漆」的預設單價。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 其他 Tabs (沿用) -->
+        <div id="tabPaint" style="display:none;">
+            <div style="margin-bottom:10px; display:flex; gap:10px;">
+                <input type="text" id="newPaintName" placeholder="新增型號..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px;">
+                <button onclick="addPaint()" style="padding:8px 15px; background:#34c759; color:white; border:none; border-radius:5px;">+</button>
+            </div>
+            <div style="max-height:50vh; overflow-y:auto;">
+                <table class="manage-table"><tbody id="paintListBody"></tbody></table>
+            </div>
+        </div>
+
+        <div id="tabRule" style="display:none;">
+            <div style="max-height:60vh; overflow-y:auto;"><table class="manage-table" id="ruleTable"></table></div>
+        </div>
+
+        <div id="tabRatio" style="display:none;">
+            <table class="manage-table"><tbody id="ratioTableBody"></tbody></table>
+        </div>
+
+        <div style="text-align:center; margin-top:20px; border-top:1px solid #eee; padding-top:10px;">
+            <button class="btn btn-submit" style="width:200px;" onclick="saveAllSettings()">儲存所有設定</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- V36.0 資料結構 ---
+const COMPONENTS = ["白色", "灰色", "黑色", "TAP", "東邦0.1", "東邦0.2", "金油", "面漆"];
+const DEFAULT_PARTS = {"車架":1.0, "前叉":0.5, "後上下叉":0.5, "前三角電":1.3, "前三角":0.8, "後三角":0.5, "車圈":0.5, "蓋貨架":0.3, "配件":0.3};
+
+// V33 面漆清單 (縮減版示意，實際會載入完整版)
+const DEFAULT_PAINTS = [
+    "A153F","A119F","A225T","A242t","A266W","A268W","A291F","A304Z","A310F","A312F","A335Z","A482F","A515W","A618W","A638W","A641Z","A690T","A756Z","A852Z","A875t","A876Z","A878F","A883F","A930F","A993F","A996F","A804t","A801F","A990W",
+    "B06F","B05Z","B07F","B04t-0.2","B100F","B127Z","B127Z中","B133I","B133I中底","B249F","B273I中底","B328F","B454Z","B467Z","B536I","B579Z","B663t","B642W中","B731Z","B751Z","B753Z","B772W","B884I","B894R","B918F","B919F","B923t","B978R","B982F","B933F",
+    "C207Z","C512N0.1","C583R","C732W","C786I 中底","C786I 面漆","C211W","C844t","C882t","C895t","C995Z 中底","C995Z",
+    "G199t","G03t","G209I","G82t","G215Z","G215B","G03F","G232W","G244t","G246F","G303F","G311Z","G313B","G248F","G314Z","G315Z","G320Z","G321I","G323Z","G329W","G455Z","G463t","G486I","G498B","G580F","G590Z","G600F","G609t","G706R","G706R中","G710W","G770I","G771W","G885F","G866F","G915F","G916X中","G916X面",
+    "K704t","K01C","K144P","K376t","8900C","O333F","O189F","O402F","O480I","O485F","O546Z","O932F",
+    "R89I","R191F","R243W","R326W","R253F","R270I","R298W","R293F","R322W","R447I","R459Z","R470I","R461I","R532I","R532I中","R611B中","R611B","R635X中","R635X","R470I中","R880I","R886Z","R887I中","R887I","R934F","R981F",
+    "S443Z","S352T","S437W","S612Z","S746S","TC-21036","TC-24045","TC-24028","V238B","V200I","V324I","V458Z","V627R","V713W",
+    "W210I中底","W210I","W14F","W214I","W300C","W327F","W348I","W650t","W700I","W806I中","W806I","W780F",
+    "Y316I","Y247F","Y319Z","Y535F","Y774F", "A846F","B169t","B847","B849","B860t","B867t","G856","O588F","S859Z","V845F","W853Z"
+];
+const RULE_CATS = ["A", "B", "C", "G", "K", "O", "R", "S", "V", "W", "Y", "8"];
+const RULE_CODES = ["F", "T", "t", "W", "Z", "I", "B", "R", "C", "S", "X", "P"];
+
+// 狀態變數
+let partRatios = {};
+let paintList = [];
+let ruleTable = []; 
+let historicalData = []; 
+let baseCosts = {}; // 通用成分成本
+let topcoatCosts = {}; // 面漆個別成本
+let calculatedBaseFormula = {};
+let todayTempList = [];
+let currentPart = "車架"; 
+let currentBatchComponent = ''; 
+let modifyingIndex = -1; 
+
+function init() {
+    // 載入 localStorage
+    partRatios = JSON.parse(localStorage.getItem('V35_Ratios')) || DEFAULT_PARTS;
+    let savedPaints = JSON.parse(localStorage.getItem('V35_PaintList'));
+    paintList = (savedPaints && savedPaints.length > 50) ? savedPaints : DEFAULT_PAINTS.slice().sort();
+    
+    // 歷史資料遷移 (支援 V34 格式)
+    historicalData = JSON.parse(localStorage.getItem('V35_History')) || [];
+    if(historicalData.length === 0 && localStorage.getItem('V34_History')) {
+        let old = JSON.parse(localStorage.getItem('V34_History'));
+        // 舊資料沒有 rework 欄位，補上空物件
+        historicalData = old.map(r => ({...r, partRework: r.partRework || {}}));
+    }
+
+    ruleTable = JSON.parse(localStorage.getItem('V35_Rules')) || generateDefaultRules();
+    
+    // 成本載入
+    baseCosts = JSON.parse(localStorage.getItem('V35_BaseCosts')) || {};
+    COMPONENTS.forEach(c => { if(baseCosts[c] === undefined) baseCosts[c] = 300; });
+    topcoatCosts = JSON.parse(localStorage.getItem('V35_TopcoatCosts')) || {};
+
+    document.getElementById('inputDate').value = new Date().toISOString().split('T')[0];
+    recalculateFormula(); 
+    renderQueryControls();
+    
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+}
+
+function generateDefaultRules() {
+    let rules = [];
+    RULE_CATS.forEach(cat => {
+        RULE_CODES.forEach(code => {
+            let recipe = {};
+            COMPONENTS.forEach(c => recipe[c] = false);
+            if(cat === 'A' && ['F','T'].includes(code)) { recipe['灰色'] = true; recipe['TAP'] = true; recipe['面漆'] = true; }
+            rules.push({ cat, code, recipe });
+        });
+    });
+    return rules;
+}
+
+/* --- 每日輸入 (含重工邏輯) --- */
+function renderInputFields() {
+    document.getElementById('paintInputButtons').innerHTML = COMPONENTS.map(c => `
+        <button class="btn-part ${c===currentBatchComponent?'active':''}" onclick="selectBatchComponent('${c}')">${c}</button>
+    `).join('');
+
+    const partDiv = document.getElementById('partInputList');
+    // 如果是第一次渲染或切換成分，重新生成結構
+    if(!partDiv.innerHTML || partDiv.children.length !== Object.keys(partRatios).length) {
+        partDiv.innerHTML = Object.keys(partRatios).map(p => `
+            <div class="input-row-complex">
+                <div class="input-label">${p}</div>
+                <div class="input-group-sub">
+                    <span class="sub-label">生產</span>
+                    <input type="number" id="in_prod_${p}" class="input-sub-field" placeholder="0" oninput="calcReworkRate('${p}')">
+                </div>
+                <div class="input-group-sub">
+                    <span class="sub-label">重工</span>
+                    <input type="number" id="in_rework_${p}" class="input-sub-field" placeholder="0" oninput="calcReworkRate('${p}')">
+                </div>
+                <div class="rework-rate" id="rate_${p}">0%</div>
+            </div>
+        `).join('');
+    }
+    
+    const isEdit = modifyingIndex >= 0;
+    document.getElementById('btnAddRecord').style.display = isEdit ? 'none' : 'block';
+    document.getElementById('btnUpdateRecord').style.display = isEdit ? 'block' : 'none';
+}
+
+function selectBatchComponent(c) {
+    currentBatchComponent = c;
+    // 保持輸入框數值不變，只更新按鈕狀態
+    document.querySelectorAll('#paintInputButtons .btn-part').forEach(b => {
+        b.classList.toggle('active', b.innerText === c);
+    });
+}
+
+function calcReworkRate(part) {
+    const prod = parseFloat(document.getElementById(`in_prod_${part}`).value) || 0;
+    const rework = parseFloat(document.getElementById(`in_rework_${part}`).value) || 0;
+    const rateDiv = document.getElementById(`rate_${part}`);
+    
+    if (prod > 0) {
+        const rate = (rework / prod) * 100;
+        rateDiv.innerText = rate.toFixed(1) + '%';
+        rateDiv.style.color = rate > 10 ? 'red' : (rate > 0 ? '#ff9500' : '#ccc');
+    } else {
+        rateDiv.innerText = rework > 0 ? '100%' : '0%';
+    }
+}
+
+function addTodayRecord() {
+    if (modifyingIndex >= 0) { showStatus("⚠️ 請先退出修改模式", "red"); return; }
+    if (!currentBatchComponent) { showStatus("⚠️ 請選擇成分", "red"); return; }
+    
+    let totalUsage = parseFloat(document.getElementById('in_paint_total').value);
+    if(isNaN(totalUsage) || totalUsage <= 0) { showStatus("⚠️ 請輸入使用量", "red"); return; }
+    
+    let usage = {}; COMPONENTS.forEach(c => usage[c] = 0); usage[currentBatchComponent] = totalUsage;
+    let prod = {}, rework = {}, hasData = false;
+
+    Object.keys(partRatios).forEach(p => {
+        let vProd = parseInt(document.getElementById(`in_prod_${p}`).value) || 0;
+        let vRework = parseInt(document.getElementById(`in_rework_${p}`).value) || 0;
+        if(vProd > 0) prod[p] = vProd;
+        if(vRework > 0) rework[p] = vRework;
+        if(vProd > 0 || vRework > 0) hasData = true;
+    });
+
+    if(!hasData) { showStatus("⚠️ 請輸入至少一項數據", "red"); return; }
+
+    todayTempList.push({ usage, prod, rework, componentName: currentBatchComponent });
+    renderTodayList();
+    clearTodayInput(false);
+}
+
+function updateModifiedRecord() {
+    if (modifyingIndex < 0) return;
+    let totalUsage = parseFloat(document.getElementById('in_paint_total').value);
+    if(isNaN(totalUsage) || totalUsage <= 0) { showStatus("⚠️ 請輸入使用量", "red"); return; }
+    
+    let usage = {}; COMPONENTS.forEach(c => usage[c] = 0); usage[currentBatchComponent] = totalUsage;
+    let prod = {}, rework = {}, hasData = false;
+    
+    Object.keys(partRatios).forEach(p => {
+        let vProd = parseInt(document.getElementById(`in_prod_${p}`).value) || 0;
+        let vRework = parseInt(document.getElementById(`in_rework_${p}`).value) || 0;
+        if(vProd > 0) prod[p] = vProd;
+        if(vRework > 0) rework[p] = vRework;
+        if(vProd > 0 || vRework > 0) hasData = true;
+    });
+    
+    if(!hasData) { showStatus("⚠️ 請輸入至少一項數據", "red"); return; }
+
+    historicalData[modifyingIndex] = {
+        date: document.getElementById('inputDate').value,
+        paintUsage: usage, prod, rework, // Save separate rework
+        componentName: currentBatchComponent
+    };
+    
+    localStorage.setItem('V35_History', JSON.stringify(historicalData));
+    modifyingIndex = -1;
+    clearTodayInput(true);
+    recalculateFormula();
+    renderHistoryTable();
+    showStatus("✅ 修改完成", "green");
+}
+
+function clearTodayInput(clearList = true) {
+    document.getElementById('in_paint_total').value = '';
+    document.querySelectorAll('#partInputList input').forEach(i => { i.value = ''; });
+    document.querySelectorAll('.rework-rate').forEach(d => d.innerText = '0%');
+    
+    if(clearList) { todayTempList = []; renderTodayList(); }
+    currentBatchComponent = '';
+    modifyingIndex = -1;
+    renderInputFields();
+}
+
+function renderTodayList() {
+    const div = document.getElementById('todayListDisplay');
+    if(todayTempList.length === 0) { div.innerText = '今日尚未加入數據'; return; }
+    
+    div.innerHTML = todayTempList.map((item, idx) => {
+        let total = item.usage[item.componentName].toFixed(2);
+        // 顯示生產與重工摘要
+        let details = Object.keys(partRatios).map(p => {
+            let pr = item.prod[p] || 0;
+            let rw = item.rework[p] || 0;
+            if(pr===0 && rw===0) return null;
+            return `${p}:${pr}${rw>0 ? `(+${rw}重)` : ''}`;
+        }).filter(x=>x).join(', ');
+        
+        return `<div style="display:flex; justify-content:space-between; padding:5px; border-bottom:1px solid #ddd; font-size:13px;">
+            <span class="comp-blue">${item.componentName} ${total}kg</span>
+            <span>${details}</span>
+        </div>`;
+    }).join('');
+}
+
+function submitToHistory() {
+    if(todayTempList.length === 0) { showStatus("無數據", "red"); return; }
+    const date = document.getElementById('inputDate').value;
+    todayTempList.forEach(item => {
+        historicalData.push({ 
+            date: date, 
+            paintUsage: item.usage, 
+            partProd: item.prod, // 保留舊欄位名相容
+            partRework: item.rework, // 新增欄位
+            componentName: item.componentName 
+        });
+    });
+    localStorage.setItem('V35_History', JSON.stringify(historicalData));
+    todayTempList = [];
+    renderTodayList();
+    recalculateFormula();
+    renderHistoryTable();
+    showStatus("✅ 已存入歷史紀錄", "#007aff");
+}
+
+/* --- 配方計算 (加入重工邏輯) --- */
+function recalculateFormula() {
+    let totals = {}; 
+    COMPONENTS.forEach(c => totals[c] = { kg: 0, work: 0 });
+
+    historicalData.forEach(rec => {
+        let work = 0;
+        // 工作量 = (良品 + 重工) * 倍率
+        let reworkData = rec.partRework || {};
+        
+        for(let p in partRatios) {
+            let prod = rec.partProd[p] || 0;
+            let rew = reworkData[p] || 0;
+            work += (prod + rew) * partRatios[p];
+        }
+        
+        for(let c in rec.paintUsage) {
+            if (rec.paintUsage[c] > 0) {
+                totals[c].kg += rec.paintUsage[c];
+                totals[c].work += work;
+            }
+        }
+    });
+
+    calculatedBaseFormula = {};
+    COMPONENTS.forEach(c => {
+        const t = totals[c];
+        calculatedBaseFormula[c] = (t.work > 0) ? (t.kg / t.work) : 0;
+    });
+    
+    queryRecipe();
+}
+
+/* --- 查詢與成本 (進階版) --- */
+function renderQueryControls() {
+    document.getElementById('paintOptions').innerHTML = paintList.map(p => `<option value="${p}">`).join('');
+    document.getElementById('partBtnGroup').innerHTML = Object.keys(partRatios).map(p => `
+        <button class="btn-part ${p===currentPart?'active':''}" onclick="selectPart('${p}')">${p}</button>
+    `).join('');
+}
+
+function selectPart(p) {
+    currentPart = p;
+    document.querySelectorAll('#partBtnGroup .btn-part').forEach(b => b.classList.toggle('active', b.innerText === p));
+    queryRecipe();
+}
+
+function queryRecipe() {
+    const name = document.getElementById('paintSearchInput').value.trim();
+    const tbody = document.getElementById('recipeResultBody');
+    const tfoot = document.getElementById('recipeResultFoot');
+    
+    if(!name) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">請輸入型號</td></tr>'; tfoot.style.display='none'; return; }
+
+    let clean = name.replace(/[^a-zA-Z0-9]/g, '');
+    let cat = clean.charAt(0).toUpperCase();
+    let code = clean.slice(-1);
+    
+    const rule = ruleTable.find(r => r.cat === cat && r.code.toUpperCase() === code.toUpperCase());
+    
+    if(!rule) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:red;">無此製程規則 (${cat}-${code})</td></tr>`;
+        tfoot.style.display='none';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    const ratio = partRatios[currentPart] || 1.0;
+    let totalCost = 0;
+    let hasItem = false;
+
+    COMPONENTS.forEach(comp => {
+        if(rule.recipe[comp]) {
+            hasItem = true;
+            const kg = (calculatedBaseFormula[comp] || 0) * ratio; // 用量計算
+            
+            // 成本邏輯: 若是面漆，查特定表；否則查基礎表
+            let price = 0;
+            if(comp === '面漆') {
+                price = topcoatCosts[name] || baseCosts['面漆'] || 300;
+            } else {
+                price = baseCosts[comp] || 300;
+            }
+            
+            const cost = kg * price;
+            totalCost += cost;
+            
+            // ITEM 1: 單件用量改為 toFixed(3)
+            let dispName = comp === "面漆" ? `<span class="comp-blue">${name}</span>` : comp;
+            
+            tbody.innerHTML += `<tr>
+                <td>${dispName}</td>
+                <td class="highlight-val">${kg.toFixed(3)}</td>
+                <td class="cost-val">$${cost.toFixed(1)}</td>
+            </tr>`;
+        }
+    });
+
+    if(!hasItem) { tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">無成分</td></tr>`; }
+    
+    // 總成本顯示
+    document.getElementById('totalCostDisplay').innerText = '$' + totalCost.toFixed(1);
+    tfoot.style.display = 'table-footer-group';
+}
+
+/* --- 管理中心 --- */
+function openManageModal() {
+    document.getElementById('manageModal').style.display = 'block';
+    modifyingIndex = -1;
+    switchTab('tabInput');
+    renderInputFields();
+    renderCostTable();
+    renderHistoryTable();
+    renderPaintListTable();
+    renderRuleTable();
+    renderRatioTable();
+}
+
+function closeModal() { document.getElementById('manageModal').style.display = 'none'; }
+
+function switchTab(id) {
+    document.querySelectorAll('.modal-content > div[id^="tab"]').forEach(d => d.style.display = 'none');
+    document.getElementById(id).style.display = 'block';
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    // ITEM 5: 更新 Tab 標題顯示
+    let tabNameMap = {
+        'tabCost': '成本單價',
+        'tabHistory': '歷史紀錄',
+        'tabPaint': '面漆清單',
+        'tabRule': '製程規則',
+        'tabRatio': '基準倍率',
+        'tabInput': '每日輸入 (含重工)'
+    };
+    
+    const btn = document.querySelector(`button[onclick="switchTab('${id}')"]`);
+    if (btn) {
+        btn.classList.add('active');
+        // Manually update the text if needed, but here we just rely on the existing HTML text
+    }
+}
+
+// 歷史明細 (藍字 + 重工顯示)
+function renderHistoryTable() {
+    const tbody = document.getElementById('historyTableBody');
+    tbody.innerHTML = historicalData.slice().reverse().map((rec, i) => {
+        let realIdx = historicalData.length - 1 - i;
+        
+        // ITEM 3: 所有成分皆顯示藍色字體
+        let comps = Object.entries(rec.paintUsage).filter(x=>x[1]>0).map(([k,v]) => {
+            // 所有成分都套用 comp-blue 樣式
+            return `<span class="comp-blue">${k}</span> ${v.toFixed(1)}kg`;
+        }).join(', ');
+        
+        // 產量明細
+        let parts = Object.keys(rec.partProd).map(p => {
+            let pr = rec.partProd[p];
+            let rw = (rec.partRework && rec.partRework[p]) ? rec.partRework[p] : 0;
+            return rw > 0 ? `${p}:${pr}+${rw}重` : `${p}:${pr}`;
+        }).join(', ');
+        
+        return `<tr>
+            <td>${rec.date}</td>
+            <td style="text-align:left;">
+                <div>${comps}</div>
+                <div style="font-size:12px; color:#666;">${parts}</div>
+            </td>
+            <td>
+                <button onclick="modifyHistory(${realIdx})" style="color:#ff9500; border:none; background:none; cursor:pointer;">修改</button>
+                <button onclick="deleteHistory(${realIdx})" style="color:red; border:none; background:none; cursor:pointer;">刪除</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function modifyHistory(idx) {
+    const rec = historicalData[idx];
+    modifyingIndex = idx;
+    switchTab('tabInput');
+    
+    document.getElementById('inputDate').value = rec.date;
+    selectBatchComponent(rec.componentName);
+    document.getElementById('in_paint_total').value = rec.paintUsage[rec.componentName];
+    
+    renderInputFields(); // 重繪輸入框
+    // 填入數值
+    setTimeout(() => {
+        Object.keys(partRatios).forEach(p => {
+            if(rec.partProd[p]) document.getElementById(`in_prod_${p}`).value = rec.partProd[p];
+            if(rec.partRework && rec.partRework[p]) document.getElementById(`in_rework_${p}`).value = rec.partRework[p];
+            calcReworkRate(p);
+        });
+    }, 0);
+    showStatus("✏️ 編輯模式", "#ff9500");
+}
+
+function deleteHistory(idx) {
+    if(confirm("刪除此筆？")) {
+        historicalData.splice(idx, 1);
+        localStorage.setItem('V35_History', JSON.stringify(historicalData));
+        renderHistoryTable();
+        recalculateFormula();
+    }
+}
+
+/* --- 成本管理 (分離式) --- */
+function renderCostTable() {
+    // 1. 配方單價
+    document.getElementById('baseCostBody').innerHTML = COMPONENTS.map(c => {
+        if(c === '面漆') return `<tr><td>面漆 (預設)</td><td><input type="number" value="${baseCosts[c]}" onchange="baseCosts['${c}']=this.value" class="cost-input"></td></tr>`;
+        return `<tr><td>${c}</td><td><input type="number" value="${baseCosts[c]}" onchange="baseCosts['${c}']=this.value" class="cost-input"></td></tr>`;
+    }).join('');
+    
+    // 2. 面漆單價
+    renderTopcoatCostTable();
+}
+
+function renderTopcoatCostTable() {
+    document.getElementById('topcoatCostBody').innerHTML = Object.keys(topcoatCosts).map(name => `
+        <tr>
+            <td class="comp-blue">${name}</td>
+            <td>$${topcoatCosts[name]}</td>
+            <td><button onclick="deleteTopcoatCost('${name}')" style="color:red; border:none; background:none;">✕</button></td>
+        </tr>
+    `).join('');
+}
+
+function addTopcoatPrice() {
+    const name = document.getElementById('costPaintName').value.trim();
+    const price = parseFloat(document.getElementById('costPaintPrice').value);
+    if(name && price > 0) {
+        if (topcoatCosts.hasOwnProperty(name)) {
+            showStatus(`⚠️ 面漆 ${name} 已存在，將更新單價。`, "#ff9500");
+        }
+        topcoatCosts[name] = price;
+        document.getElementById('costPaintName').value = '';
+        document.getElementById('costPaintPrice').value = '';
+        renderTopcoatCostTable();
+    } else {
+        showStatus("⚠️ 請輸入有效型號與單價", "red");
+    }
+}
+
+function deleteTopcoatCost(name) {
+    if(confirm(`確定刪除面漆 ${name} 的個別定價嗎？`)) {
+        delete topcoatCosts[name];
+        renderTopcoatCostTable();
+    }
+}
+
+/* --- 其他基礎表格 (維持不變) --- */
+function renderPaintListTable() {
+    document.getElementById('paintListBody').innerHTML = paintList.map((p, i) => `
+        <tr><td>${p}</td><td><button onclick="paintList.splice(${i},1);renderPaintListTable();renderQueryControls()" style="color:red;border:none;background:none;">✕</button></td></tr>
+    `).join('');
+}
+
+// ITEM 6: 新增重複檢查提示
+function addPaint() { 
+    let v=document.getElementById('newPaintName').value.trim(); 
+    if(!v) return;
+
+    if(paintList.includes(v)) {
+        showStatus(`⚠️ 型號 ${v} 已存在於清單中`, "red");
+        return;
+    }
+    
+    paintList.push(v); 
+    paintList.sort(); 
+    renderPaintListTable(); 
+    renderQueryControls(); 
+    document.getElementById('newPaintName').value=''; 
+    showStatus(`✅ 型號 ${v} 已新增`, "#007aff");
+}
+
+function renderRuleTable() {
+    const t = document.getElementById('ruleTable');
+    let h = `<thead><tr><th>類</th><th>碼</th>${COMPONENTS.map(c=>`<th style="font-size:10px">${c}</th>`).join('')}</tr></thead><tbody>`;
+    let lastCat = '';
+    ruleTable.forEach((r, i) => {
+        let cell = r.cat!==lastCat ? `<td rowspan="${ruleTable.filter(x=>x.cat===r.cat).length}" style="font-weight:bold;background:#fff;border-right:1px solid #ddd;">${r.cat}</td>` : '';
+        if(r.cat!==lastCat) lastCat=r.cat;
+        let cks = COMPONENTS.map(c => `<td><input type="checkbox" ${r.recipe[c]?'checked':''} onchange="ruleTable[${i}].recipe['${c}']=this.checked"></td>`).join('');
+        h += `<tr>${cell}<td>${r.code}</td>${cks}</tr>`;
+    });
+    t.innerHTML = h+'</tbody>';
+}
+
+function renderRatioTable() {
+    document.getElementById('ratioTableBody').innerHTML = Object.keys(partRatios).map(p => `
+        <tr><td>${p}</td><td><input type="number" value="${partRatios[p]}" onchange="partRatios['${p}']=this.value" style="width:60px;"></td></tr>
+    `).join('');
+}
+
+function saveAllSettings() {
+    localStorage.setItem('V35_PaintList', JSON.stringify(paintList));
+    localStorage.setItem('V35_Rules', JSON.stringify(ruleTable));
+    localStorage.setItem('V35_Ratios', JSON.stringify(partRatios));
+    localStorage.setItem('V35_BaseCosts', JSON.stringify(baseCosts));
+    localStorage.setItem('V35_TopcoatCosts', JSON.stringify(topcoatCosts));
+    renderQueryControls(); recalculateFormula(); alert("設定已儲存"); closeModal();
+}
+
+function showStatus(m, c) { const e=document.getElementById('statusMessage'); e.innerText=m; e.style.color=c; setTimeout(()=>e.innerText='',3000); }
+
+init();
+</script>
+</body>
+</html>
