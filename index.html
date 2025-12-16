@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>配方查詢 (V36.0 - 雲端同步版)</title>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
+    <title>配方查詢 (V37.0 - 備份還原版)</title>
     <style>
         /* --- Apple 風格基礎設定 --- */
         body { 
@@ -90,12 +87,57 @@
         
         .cost-input-group { display: flex; gap: 5px; align-items: center; }
         .cost-input { width: 100px; padding: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        
+        /* 製程規則專用排版 */
+        .rule-group-card { 
+            border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; margin-bottom: 15px; background: #f9f9fb;
+        }
+        .rule-header { font-weight: 700; font-size: 16px; margin-bottom: 10px; color: #007aff; border-bottom: 2px solid #007aff; padding-bottom: 5px;}
+        .rule-item-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+        .rule-item { 
+            display: flex; flex-direction: column; align-items: center; border: 1px solid #ddd; border-radius: 8px; padding: 5px;
+            width: 80px; min-width: 80px; text-align: center; background: white;
+        }
+        .rule-item-code { font-weight: 600; font-size: 14px; color: #1c1c1e; }
+        .rule-item-comp-input { width: 70px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 12px; }
+        .rule-item-comp-label { font-size: 10px; color: #888; margin-top: 3px; }
+
+        /* 缺失規則提示區 */
+        .missing-rule-alert {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff2f2;
+            border: 1px solid #ffcccc;
+            border-radius: 8px;
+            color: #d32f2f;
+        }
+        .missing-list {
+            font-size: 13px;
+            margin-top: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .missing-tag {
+            background: #ffebee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #ffcdd2;
+        }
+
+        /* 狀態回饋 */
+        #statusMessage {
+            text-align: center; 
+            margin-top: 10px; 
+            height: 20px; 
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>配方查詢 <span style="font-size:14px; color:#888;">(V36.0 雲端同步版)</span></h2>
+    <h2>配方查詢 <span style="font-size:14px; color:#888;">(V37.0 - 備份還原版)</span></h2>
 
     <div class="section-card">
         <div class="query-controls-bar">
@@ -130,6 +172,7 @@
     <button class="btn-manage" onclick="openManageModal()">⚙️ 數據管理中心</button>
 </div>
 
+<!-- Modal -->
 <div id="manageModal" class="modal">
     <div class="modal-content">
         <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
@@ -138,14 +181,19 @@
         </div>
         
         <div class="tab-group">
-            <button class="tab-btn active" onclick="switchTab('tabInput')">每日輸入 (含重工)</button>
+            <button class="tab-btn active" onclick="switchTab('tabInput')">每日輸入</button>
             <button class="tab-btn" onclick="switchTab('tabHistory')">歷史紀錄</button>
             <button class="tab-btn" onclick="switchTab('tabCost')">成本單價</button>
             <button class="tab-btn" onclick="switchTab('tabPaint')">面漆清單</button>
             <button class="tab-btn" onclick="switchTab('tabRule')">製程規則</button>
             <button class="tab-btn" onclick="switchTab('tabRatio')">基準倍率</button>
+            <!-- 3. 新增備註欄 -->
+            <button class="tab-btn" onclick="switchTab('tabNote')">備註</button>
+            <!-- 4. 新增備份功能 -->
+            <button class="tab-btn" onclick="switchTab('tabBackup')" style="color:#e67e22;">系統備份</button>
         </div>
 
+        <!-- 每日輸入 Tab -->
         <div id="tabInput" style="display:block;">
             <div style="text-align:center; margin-bottom:15px; background:#f9f9f9; padding:8px; border-radius:8px;">
                 <label>日期: </label>
@@ -160,7 +208,7 @@
             </div>
 
             <div style="max-width: 600px; margin: 0 auto; border: 1px solid #e5e5ea; border-radius: 8px; padding: 15px;">
-                <h4 style="margin:0 0 10px 0; color:#555;">生產數據</h4>
+                <h4 style="margin:0 0 10px 0; color:#555;">次數輸入</h4> 
                 <div id="partInputList"></div>
             </div>
 
@@ -175,9 +223,9 @@
             <div style="text-align:center; margin-top:20px;">
                 <button class="btn btn-submit" style="max-width:300px;" onclick="submitToHistory()">🔄 確認更新並計算</button>
             </div>
-            <div id="statusMessage" style="text-align:center; margin-top:10px; height:20px; font-weight:bold;"></div>
         </div>
 
+        <!-- 歷史紀錄 Tab -->
         <div id="tabHistory" style="display:none;">
             <div style="max-height:60vh; overflow-y:auto;">
                 <table class="manage-table">
@@ -187,6 +235,7 @@
             </div>
         </div>
         
+        <!-- 成本設定 Tab -->
         <div id="tabCost" style="display:none;">
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div>
@@ -214,6 +263,7 @@
             </div>
         </div>
 
+        <!-- 面漆清單 Tab -->
         <div id="tabPaint" style="display:none;">
             <div style="margin-bottom:10px; display:flex; gap:10px;">
                 <input type="text" id="newPaintName" placeholder="新增型號..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px;">
@@ -224,48 +274,68 @@
             </div>
         </div>
 
+        <!-- 製程規則 Tab -->
         <div id="tabRule" style="display:none;">
-            <div style="max-height:60vh; overflow-y:auto;"><table class="manage-table" id="ruleTable"></table></div>
+            <div id="ruleDisplayArea" style="max-height:50vh; overflow-y:auto;">
+                <!-- 規則將在這裡分組顯示 -->
+            </div>
+            <!-- 2. 如果有面漆 沒有再製程規則裡 請列出來給我 -->
+            <div id="missingRuleArea" class="missing-rule-alert" style="display:none;">
+                <strong>⚠️ 注意：以下面漆型號尚未設定製程規則：</strong>
+                <div id="missingRuleList" class="missing-list"></div>
+            </div>
         </div>
 
+        <!-- 基準倍率 Tab -->
         <div id="tabRatio" style="display:none;">
-            <table class="manage-table"><tbody id="ratioTableBody"></tbody></table>
+            <table class="manage-table" id="ratioTable">
+                <tbody id="ratioTableBody"></tbody>
+            </table>
+        </div>
+
+        <!-- 3. 新增 備註欄 -->
+        <div id="tabNote" style="display:none;">
+            <h4 style="margin-bottom:10px; color:#555;">備註 / 筆記</h4>
+            <textarea id="userNotes" style="width:100%; height:300px; padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px; line-height:1.5;" placeholder="在此輸入任何備註事項..."></textarea>
+        </div>
+
+        <!-- 4. 系統備份 Tab -->
+        <div id="tabBackup" style="display:none;">
+            <div style="padding:20px; text-align:center;">
+                <h3 style="color:#007aff;">資料備份與還原</h3>
+                <p style="color:#666; font-size:14px; margin-bottom:30px;">
+                    定期備份可以防止資料遺失。備份檔案 (.json) 可以儲存在您的電腦中。
+                </p>
+                
+                <div style="margin-bottom:30px; padding:20px; border:1px solid #eee; border-radius:12px;">
+                    <h4 style="margin-top:0;">📤 匯出資料</h4>
+                    <p style="font-size:12px; color:#888;">將目前所有設定與歷史紀錄下載到電腦。</p>
+                    <button class="btn btn-submit" style="width:200px;" onclick="exportData()">下載備份檔案</button>
+                </div>
+
+                <div style="padding:20px; border:1px dashed #ccc; border-radius:12px; background-color:#fafafa;">
+                    <h4 style="margin-top:0;">📥 匯入資料</h4>
+                    <p style="font-size:12px; color:#888;">選擇備份檔案以還原資料 (將覆蓋現有資料)。</p>
+                    <input type="file" id="importFile" accept=".json" style="margin-bottom:15px;">
+                    <br>
+                    <button class="btn btn-manage" style="width:200px; background-color:#ff9500;" onclick="importData()">讀取並還原</button>
+                </div>
+            </div>
         </div>
 
         <div style="text-align:center; margin-top:20px; border-top:1px solid #eee; padding-top:10px;">
             <button class="btn btn-submit" style="width:200px;" onclick="saveAllSettings()">儲存所有設定</button>
+            <div id="saveStatus" style="margin-top:10px; font-weight:600; color:#1c1c1e; height:20px;"></div>
         </div>
     </div>
 </div>
 
 <script>
-// ===================================================
-// 🌟 1. FIREBASE 數據同步設定 🌟
-// ===================================================
-
-// 您的 Web App's Firebase configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyAc-B-BQ5jcUXSmAMyfCzEHE0Iw4BgoLws",
-    authDomain: "test-8841b.firebaseapp.com",
-    databaseURL: "https://test-8841b-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "test-8841b",
-    storageBucket: "test-8841b.firebasestorage.app",
-    messagingSenderId: "468930093418",
-    appId: "1:468930093418:web:71abaddf76c1c6fd64c513"
-};
-
-// 初始化 Firebase 應用程式
-const app = firebase.initializeApp(firebaseConfig);
-const database = firebase.database(); 
-// 我們將所有數據儲存在一個名為 'app_data' 的根路徑下
-const dbRef = database.ref('app_data'); 
-
-
-// --- V36.0 資料結構 ---
+// --- V37.0 資料結構 ---
 const COMPONENTS = ["白色", "灰色", "黑色", "TAP", "東邦0.1", "東邦0.2", "金油", "面漆"];
 const DEFAULT_PARTS = {"車架":1.0, "前叉":0.5, "後上下叉":0.5, "前三角電":1.3, "前三角":0.8, "後三角":0.5, "車圈":0.5, "蓋貨架":0.3, "配件":0.3};
 
-// V33 面漆清單 (縮減版示意，實際會載入完整版)
+// V33 面漆清單 (縮減版示意)
 const DEFAULT_PAINTS = [
     "A153F","A119F","A225T","A242t","A266W","A268W","A291F","A304Z","A310F","A312F","A335Z","A482F","A515W","A618W","A638W","A641Z","A690T","A756Z","A852Z","A875t","A876Z","A878F","A883F","A930F","A993F","A996F","A804t","A801F","A990W",
     "B06F","B05Z","B07F","B04t-0.2","B100F","B127Z","B127Z中","B133I","B133I中底","B249F","B273I中底","B328F","B454Z","B467Z","B536I","B579Z","B663t","B642W中","B731Z","B751Z","B753Z","B772W","B884I","B894R","B918F","B919F","B923t","B978R","B982F","B933F",
@@ -277,7 +347,8 @@ const DEFAULT_PAINTS = [
     "W210I中底","W210I","W14F","W214I","W300C","W327F","W348I","W650t","W700I","W806I中","W806I","W780F",
     "Y316I","Y247F","Y319Z","Y535F","Y774F", "A846F","B169t","B847","B849","B860t","B867t","G856","O588F","S859Z","V845F","W853Z"
 ];
-const RULE_CATS = ["A", "B", "C", "G", "K", "O", "R", "S", "V", "W", "Y", "8"];
+// 1. 製程規則沒有8這個類別 取消
+const RULE_CATS = ["A", "B", "C", "G", "K", "O", "R", "S", "V", "W", "Y"];
 const RULE_CODES = ["F", "T", "t", "W", "Z", "I", "B", "R", "C", "S", "X", "P"];
 
 // 狀態變數
@@ -285,56 +356,40 @@ let partRatios = {};
 let paintList = [];
 let ruleTable = []; 
 let historicalData = []; 
-let baseCosts = {}; // 通用成分成本
-let topcoatCosts = {}; // 面漆個別成本
+let baseCosts = {}; 
+let topcoatCosts = {}; 
 let calculatedBaseFormula = {};
 let todayTempList = [];
 let currentPart = "車架"; 
 let currentBatchComponent = ''; 
 let modifyingIndex = -1; 
 
-// ===================================================
-// 🌟 2. 數據初始化 (重寫: 監聽 Firebase) 🌟
-// ===================================================
-
 function init() {
-    document.getElementById('inputDate').value = new Date().toISOString().split('T')[0];
+    // 載入 localStorage
+    partRatios = JSON.parse(localStorage.getItem('V35_Ratios')) || DEFAULT_PARTS;
+    let savedPaints = JSON.parse(localStorage.getItem('V35_PaintList'));
+    paintList = (savedPaints && savedPaints.length > 50) ? savedPaints : DEFAULT_PAINTS.slice().sort();
     
-    // 監聽 Firebase 數據變化：數據有變動時，自動從雲端載入
-    dbRef.on('value', (snapshot) => {
-        const cloudData = snapshot.val();
-        
-        if (cloudData) {
-            // 從雲端數據載入所有數據
-            partRatios = cloudData.ratios || DEFAULT_PARTS;
-            // 由於 paintList 可能很長，使用三元運算符確保載入
-            paintList = (cloudData.paints && cloudData.paints.length > 50) ? cloudData.paints : DEFAULT_PAINTS.slice().sort();
-            historicalData = cloudData.history || [];
-            ruleTable = cloudData.rules || generateDefaultRules();
-            baseCosts = cloudData.baseCosts || {};
-            topcoatCosts = cloudData.topcoatCosts || {};
-            
-            // 確保基本成本的預設值
-            COMPONENTS.forEach(c => { if(baseCosts[c] === undefined) baseCosts[c] = 300; });
-            
-            // 數據載入後，重新計算和渲染所有介面
-            recalculateFormula(); 
-            renderQueryControls();
-            renderInputFields(); 
-            renderHistoryTable(); // 確保歷史紀錄表格更新
-            
-            showStatus("✅ 雲端數據已載入並同步", "#007aff");
-        } else {
-            // 數據庫為空，寫入預設設定到雲端
-            console.log("Firebase 數據庫為空，寫入預設設定。");
-            // 第一次載入時，將所有預設值寫入雲端
-            saveAllSettings(); 
-            showStatus("⚠️ 數據庫初始化完成", "#ff9500");
-        }
-    }, (error) => {
-        console.error("Firebase 數據監聽錯誤:", error);
-        showStatus("❌ 數據同步失敗，請檢查網路或 Firebase 規則", "red");
-    });
+    // 歷史資料
+    historicalData = JSON.parse(localStorage.getItem('V35_History')) || [];
+
+    // 規則結構
+    ruleTable = JSON.parse(localStorage.getItem('V35_Rules')) || generateDefaultRules();
+    
+    // 成本載入
+    baseCosts = JSON.parse(localStorage.getItem('V35_BaseCosts')) || {};
+    COMPONENTS.forEach(c => { if(baseCosts[c] === undefined) baseCosts[c] = 300; });
+    topcoatCosts = JSON.parse(localStorage.getItem('V35_TopcoatCosts')) || {};
+
+    // 載入備註
+    const savedNotes = localStorage.getItem('V35_Notes');
+    if (savedNotes) {
+        document.getElementById('userNotes').value = savedNotes;
+    }
+
+    document.getElementById('inputDate').value = new Date().toISOString().split('T')[0];
+    recalculateFormula(); 
+    renderQueryControls();
     
     document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
 }
@@ -344,57 +399,31 @@ function generateDefaultRules() {
     RULE_CATS.forEach(cat => {
         RULE_CODES.forEach(code => {
             let recipe = {};
-            COMPONENTS.forEach(c => recipe[c] = false);
-            if(cat === 'A' && ['F','T'].includes(code)) { recipe['灰色'] = true; recipe['TAP'] = true; recipe['面漆'] = true; }
+            COMPONENTS.forEach(c => recipe[c] = 0); 
+            if(cat === 'A' && ['F','T'].includes(code)) {
+                recipe['灰色'] = 1; 
+                recipe['TAP'] = 1;
+                recipe['面漆'] = 1;
+            }
             rules.push({ cat, code, recipe });
         });
     });
     return rules;
 }
 
-// ===================================================
-// 🌟 3. 數據寫入 (新增/修改: 寫入 Firebase) 🌟
-// ===================================================
-
-// 替換您現有的 saveAllSettings 函數
-function saveAllSettings() {
-    // 收集所有需要同步的數據到一個物件
-    const dataToSave = {
-        ratios: partRatios,
-        paints: paintList,
-        rules: ruleTable,
-        history: historicalData, // 歷史紀錄
-        baseCosts: baseCosts,
-        topcoatCosts: topcoatCosts
-    };
-    
-    // 使用 dbRef.set() 寫入 Firebase
-    dbRef.set(dataToSave)
-        .then(() => {
-            // 寫入成功，由於我們設定了監聽，所有人的畫面會自動更新
-            showStatus("✅ 所有設定已同步至雲端", "green");
-            recalculateFormula(); // 確保寫入後重新計算
-        })
-        .catch(error => {
-            showStatus(`❌ 雲端儲存失敗: ${error.message}`, "red");
-        });
-}
-
-
-/* --- 每日輸入 (含重工邏輯) --- */
+/* --- 每日輸入 --- */
 function renderInputFields() {
     document.getElementById('paintInputButtons').innerHTML = COMPONENTS.map(c => `
         <button class="btn-part ${c===currentBatchComponent?'active':''}" onclick="selectBatchComponent('${c}')">${c}</button>
     `).join('');
 
     const partDiv = document.getElementById('partInputList');
-    // 如果是第一次渲染或切換成分，重新生成結構
     if(!partDiv.innerHTML || partDiv.children.length !== Object.keys(partRatios).length) {
         partDiv.innerHTML = Object.keys(partRatios).map(p => `
             <div class="input-row-complex">
                 <div class="input-label">${p}</div>
                 <div class="input-group-sub">
-                    <span class="sub-label">生產</span>
+                    <span class="sub-label">次數</span>
                     <input type="number" id="in_prod_${p}" class="input-sub-field" placeholder="0" oninput="calcReworkRate('${p}')">
                 </div>
                 <div class="input-group-sub">
@@ -413,7 +442,6 @@ function renderInputFields() {
 
 function selectBatchComponent(c) {
     currentBatchComponent = c;
-    // 保持輸入框數值不變，只更新按鈕狀態
     document.querySelectorAll('#paintInputButtons .btn-part').forEach(b => {
         b.classList.toggle('active', b.innerText === c);
     });
@@ -434,11 +462,11 @@ function calcReworkRate(part) {
 }
 
 function addTodayRecord() {
-    if (modifyingIndex >= 0) { showStatus("⚠️ 請先退出修改模式", "red"); return; }
-    if (!currentBatchComponent) { showStatus("⚠️ 請選擇成分", "red"); return; }
+    if (modifyingIndex >= 0) { alert("請先退出修改模式"); return; }
+    if (!currentBatchComponent) { alert("請選擇成分"); return; }
     
     let totalUsage = parseFloat(document.getElementById('in_paint_total').value);
-    if(isNaN(totalUsage) || totalUsage <= 0) { showStatus("⚠️ 請輸入使用量", "red"); return; }
+    if(isNaN(totalUsage) || totalUsage <= 0) { alert("請輸入使用量"); return; }
     
     let usage = {}; COMPONENTS.forEach(c => usage[c] = 0); usage[currentBatchComponent] = totalUsage;
     let prod = {}, rework = {}, hasData = false;
@@ -451,7 +479,7 @@ function addTodayRecord() {
         if(vProd > 0 || vRework > 0) hasData = true;
     });
 
-    if(!hasData) { showStatus("⚠️ 請輸入至少一項數據", "red"); return; }
+    if(!hasData) { alert("請輸入至少一項數據"); return; }
 
     todayTempList.push({ usage, prod, rework, componentName: currentBatchComponent });
     renderTodayList();
@@ -461,7 +489,7 @@ function addTodayRecord() {
 function updateModifiedRecord() {
     if (modifyingIndex < 0) return;
     let totalUsage = parseFloat(document.getElementById('in_paint_total').value);
-    if(isNaN(totalUsage) || totalUsage <= 0) { showStatus("⚠️ 請輸入使用量", "red"); return; }
+    if(isNaN(totalUsage) || totalUsage <= 0) { alert("請輸入使用量"); return; }
     
     let usage = {}; COMPONENTS.forEach(c => usage[c] = 0); usage[currentBatchComponent] = totalUsage;
     let prod = {}, rework = {}, hasData = false;
@@ -474,20 +502,19 @@ function updateModifiedRecord() {
         if(vProd > 0 || vRework > 0) hasData = true;
     });
     
-    if(!hasData) { showStatus("⚠️ 請輸入至少一項數據", "red"); return; }
+    if(!hasData) { alert("請輸入至少一項數據"); return; }
 
     historicalData[modifyingIndex] = {
         date: document.getElementById('inputDate').value,
-        paintUsage: usage, prod, rework, // Save separate rework
+        paintUsage: usage, prod, rework, 
         componentName: currentBatchComponent
     };
     
-    // 🌟 寫入 Firebase 🌟
-    saveAllSettings();
-    
+    localStorage.setItem('V35_History', JSON.stringify(historicalData));
     modifyingIndex = -1;
     clearTodayInput(true);
-    // recalculateFormula() 和 renderHistoryTable() 會在 Firebase 監聽中自動執行
+    recalculateFormula();
+    renderHistoryTable();
     showStatus("✅ 修改完成", "green");
 }
 
@@ -508,7 +535,6 @@ function renderTodayList() {
     
     div.innerHTML = todayTempList.map((item, idx) => {
         let total = item.usage[item.componentName].toFixed(2);
-        // 顯示生產與重工摘要
         let details = Object.keys(partRatios).map(p => {
             let pr = item.prod[p] || 0;
             let rw = item.rework[p] || 0;
@@ -524,7 +550,7 @@ function renderTodayList() {
 }
 
 function submitToHistory() {
-    if(todayTempList.length === 0) { showStatus("無數據", "red"); return; }
+    if(todayTempList.length === 0) { alert("無數據"); return; }
     const date = document.getElementById('inputDate').value;
     todayTempList.forEach(item => {
         historicalData.push({ 
@@ -535,24 +561,21 @@ function submitToHistory() {
             componentName: item.componentName 
         });
     });
-    
-    // 🌟 寫入 Firebase 🌟
-    saveAllSettings();
-    
+    localStorage.setItem('V35_History', JSON.stringify(historicalData));
     todayTempList = [];
     renderTodayList();
-    // recalculateFormula() 和 renderHistoryTable() 會在 Firebase 監聽中自動執行
+    recalculateFormula();
+    renderHistoryTable();
     showStatus("✅ 已存入歷史紀錄", "#007aff");
 }
 
-/* --- 配方計算 (加入重工邏輯) --- */
+/* --- 配方計算 --- */
 function recalculateFormula() {
     let totals = {}; 
     COMPONENTS.forEach(c => totals[c] = { kg: 0, work: 0 });
 
     historicalData.forEach(rec => {
         let work = 0;
-        // 工作量 = (良品 + 重工) * 倍率
         let reworkData = rec.partRework || {};
         
         for(let p in partRatios) {
@@ -578,7 +601,7 @@ function recalculateFormula() {
     queryRecipe();
 }
 
-/* --- 查詢與成本 (進階版) --- */
+/* --- 查詢與成本 --- */
 function renderQueryControls() {
     document.getElementById('paintOptions').innerHTML = paintList.map(p => `<option value="${p}">`).join('');
     document.getElementById('partBtnGroup').innerHTML = Object.keys(partRatios).map(p => `
@@ -600,8 +623,13 @@ function queryRecipe() {
     if(!name) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">請輸入型號</td></tr>'; tfoot.style.display='none'; return; }
 
     let clean = name.replace(/[^a-zA-Z0-9]/g, '');
+    if (clean.length < 2) return; 
+
     let cat = clean.charAt(0).toUpperCase();
     let code = clean.slice(-1);
+    
+    // 特殊處理：若代碼是數字，可能不是規則代碼，這裡簡單假設最後一位是規則碼
+    // 嚴謹一點應該從後往前找第一個英文字母
     
     const rule = ruleTable.find(r => r.cat === cat && r.code.toUpperCase() === code.toUpperCase());
     
@@ -617,11 +645,13 @@ function queryRecipe() {
     let hasItem = false;
 
     COMPONENTS.forEach(comp => {
-        if(rule.recipe[comp]) {
+        const timesMultiplier = rule.recipe[comp] || 0; 
+
+        if(timesMultiplier > 0) { 
             hasItem = true;
-            const kg = (calculatedBaseFormula[comp] || 0) * ratio; // 用量計算
             
-            // 成本邏輯: 若是面漆，查特定表；否則查基礎表
+            const kg = (calculatedBaseFormula[comp] || 0) * ratio * timesMultiplier;
+            
             let price = 0;
             if(comp === '面漆') {
                 price = topcoatCosts[name] || baseCosts['面漆'] || 300;
@@ -644,7 +674,6 @@ function queryRecipe() {
 
     if(!hasItem) { tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">無成分</td></tr>`; }
     
-    // 總成本顯示
     document.getElementById('totalCostDisplay').innerText = '$' + totalCost.toFixed(1);
     tfoot.style.display = 'table-footer-group';
 }
@@ -660,6 +689,7 @@ function openManageModal() {
     renderPaintListTable();
     renderRuleTable();
     renderRatioTable();
+    checkMissingRules(); // 檢查缺失規則
 }
 
 function closeModal() { document.getElementById('manageModal').style.display = 'none'; }
@@ -675,7 +705,7 @@ function switchTab(id) {
     }
 }
 
-// 歷史明細 (藍字 + 重工顯示)
+// 歷史明細
 function renderHistoryTable() {
     const tbody = document.getElementById('historyTableBody');
     tbody.innerHTML = historicalData.slice().reverse().map((rec, i) => {
@@ -685,7 +715,6 @@ function renderHistoryTable() {
             return `<span class="comp-blue">${k}</span> ${v.toFixed(1)}kg`;
         }).join(', ');
         
-        // 產量明細
         let parts = Object.keys(rec.partProd).map(p => {
             let pr = rec.partProd[p];
             let rw = (rec.partRework && rec.partRework[p]) ? rec.partRework[p] : 0;
@@ -715,8 +744,7 @@ function modifyHistory(idx) {
     selectBatchComponent(rec.componentName);
     document.getElementById('in_paint_total').value = rec.paintUsage[rec.componentName];
     
-    renderInputFields(); // 重繪輸入框
-    // 填入數值
+    renderInputFields();
     setTimeout(() => {
         Object.keys(partRatios).forEach(p => {
             if(rec.partProd[p]) document.getElementById(`in_prod_${p}`).value = rec.partProd[p];
@@ -728,23 +756,21 @@ function modifyHistory(idx) {
 }
 
 function deleteHistory(idx) {
-    if(confirm("刪除此筆？")) {
+    if(confirm("確定刪除此筆歷史紀錄？")) {
         historicalData.splice(idx, 1);
-        // 🌟 寫入 Firebase 🌟
-        saveAllSettings();
-        // renderHistoryTable() 和 recalculateFormula() 會在 Firebase 監聽中自動執行
+        localStorage.setItem('V35_History', JSON.stringify(historicalData));
+        renderHistoryTable();
+        recalculateFormula();
     }
 }
 
-/* --- 成本管理 (分離式) --- */
+/* --- 成本管理 --- */
 function renderCostTable() {
-    // 1. 配方單價
     document.getElementById('baseCostBody').innerHTML = COMPONENTS.map(c => {
         if(c === '面漆') return `<tr><td>面漆 (預設)</td><td><input type="number" value="${baseCosts[c]}" onchange="baseCosts['${c}']=this.value" class="cost-input"></td></tr>`;
         return `<tr><td>${c}</td><td><input type="number" value="${baseCosts[c]}" onchange="baseCosts['${c}']=this.value" class="cost-input"></td></tr>`;
     }).join('');
     
-    // 2. 面漆單價
     renderTopcoatCostTable();
 }
 
@@ -753,7 +779,7 @@ function renderTopcoatCostTable() {
         <tr>
             <td class="comp-blue">${name}</td>
             <td>$${topcoatCosts[name]}</td>
-            <td><button onclick="deleteTopcoatCost('${name}')" style="color:red; border:none; background:none;">✕</button></td>
+            <td><button onclick="deleteTopcoatCost('${name}')" style="color:red; border:none; background:none; font-weight:bold; cursor:pointer;">✕</button></td>
         </tr>
     `).join('');
 }
@@ -768,99 +794,182 @@ function addTopcoatPrice() {
         topcoatCosts[name] = price;
         document.getElementById('costPaintName').value = '';
         document.getElementById('costPaintPrice').value = '';
-        
-        // 🌟 寫入 Firebase 🌟
-        saveAllSettings();
-        // renderTopcoatCostTable() 會在 Firebase 監聽中自動執行
+        renderTopcoatCostTable();
     } else {
         showStatus("⚠️ 請輸入有效型號與單價", "red");
     }
 }
 
 function deleteTopcoatCost(name) {
-    if(confirm(`確定刪除面漆 ${name} 的個別定價嗎？`)) {
-        delete topcoatCosts[name];
-        // 🌟 寫入 Firebase 🌟
-        saveAllSettings();
-        // renderTopcoatCostTable() 會在 Firebase 監聽中自動執行
-    }
+    delete topcoatCosts[name];
+    renderTopcoatCostTable();
+    queryRecipe();
 }
 
+
+/* --- 面漆清單管理 (沿用) --- */
 function renderPaintListTable() {
-    document.getElementById('paintListBody').innerHTML = paintList.map(p => `
-        <tr>
-            <td>${p}</td>
-            <td><button onclick="deletePaint('${p}')" style="color:red; border:none; background:none;">✕</button></td>
-        </tr>
-    `).join('');
-    document.getElementById('paintOptions').innerHTML = paintList.map(p => `<option value="${p}">`).join('');
+    const tbody = document.getElementById('paintListBody');
+    tbody.innerHTML = paintList.map(p => `
+        <tr>
+            <td class="comp-blue">${p}</td>
+            <td><button onclick="deletePaint('${p}')" style="color:red; border:none; background:none; cursor:pointer;">✕</button></td>
+        </tr>
+    `).join('');
 }
 
 function addPaint() {
-    const name = document.getElementById('newPaintName').value.trim().toUpperCase();
-    if(name && !paintList.includes(name)) {
-        paintList.push(name);
-        paintList.sort();
-        document.getElementById('newPaintName').value = '';
-        
-        // 🌟 寫入 Firebase 🌟
-        saveAllSettings();
-        // renderPaintListTable() 會在 Firebase 監聽中自動執行
-        showStatus("✅ 面漆新增完成", "green");
-    } else {
-        showStatus("⚠️ 型號重複或無效", "red");
-    }
+    const name = document.getElementById('newPaintName').value.trim().toUpperCase();
+    if(name && !paintList.includes(name)) {
+        paintList.push(name);
+        paintList.sort();
+        document.getElementById('newPaintName').value = '';
+        renderPaintListTable();
+        renderQueryControls(); // 更新 datalist
+        showStatus("✅ 面漆新增完成", "green");
+    } else if (paintList.includes(name)) {
+        showStatus("⚠️ 型號已存在", "red");
+    }
 }
 
 function deletePaint(name) {
-    if(confirm(`確定刪除面漆 ${name}？`)) {
-        paintList = paintList.filter(p => p !== name);
-        // 🌟 寫入 Firebase 🌟
-        saveAllSettings();
-        // renderPaintListTable() 會在 Firebase 監聽中自動執行
-    }
+    if(confirm(`確定刪除面漆型號 ${name} 嗎？`)) {
+        paintList = paintList.filter(p => p !== name);
+        renderPaintListTable();
+        renderQueryControls();
+    }
 }
 
+/* --- 製程規則管理 (CRUD) --- */
 function renderRuleTable() {
-    // 渲染製程規則表格的邏輯 (保持不變)
-    const table = document.getElementById('ruleTable');
-    let html = `<thead><tr><th>代碼</th>`;
-    COMPONENTS.forEach(c => { html += `<th>${c}</th>`; });
-    html += `</tr></thead><tbody>`;
-    
-    ruleTable.forEach((r, i) => {
-        html += `<tr><td>${r.cat}-${r.code}</td>`;
-        COMPONENTS.forEach(c => {
-            html += `<td><input type="checkbox" ${r.recipe[c] ? 'checked' : ''} onchange="ruleTable[${i}].recipe['${c}'] = this.checked"></td>`;
-        });
-        html += `</tr>`;
-    });
-    html += `</tbody>`;
-    table.innerHTML = html;
+    const table = document.getElementById('ruleTable');
+    let content = '<thead><tr><th>代碼</th><th>配方成分</th><th>操作</th></tr></thead><tbody>';
+
+    ruleTable.forEach((r, i) => {
+        // 找出所有為 true 的成分
+        const activeComps = COMPONENTS.filter(c => r.recipe[c]);
+        const dispComps = activeComps.map(c => `<span class="comp-blue">${c}</span>`).join(', ');
+        
+        content += `
+            <tr>
+                <td>${r.cat}-${r.code}</td>
+                <td>${dispComps || '<span style="color:#aaa;">無成分</span>'}</td>
+                <td>
+                    <button onclick="editRule(${i})" style="color:#ff9500; border:none; background:none;">編輯</button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    // 簡易新增/編輯區塊 (放在表格底部)
+    content += `
+        <tr><td colspan="3" style="background:#f9f9fd; padding:15px; border-top:1px solid #ddd;">
+            <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
+                <span style="font-weight:600;">代碼:</span>
+                <input type="text" id="ruleCatInput" placeholder="A, B, C..." style="width:50px; padding:5px; border-radius:4px;"> -
+                <input type="text" id="ruleCodeInput" placeholder="F, W, Z..." style="width:50px; padding:5px; border-radius:4px;">
+                <span id="currentRuleIndex" data-index="-1" style="color:red; font-weight:bold;">(新增模式)</span>
+            </div>
+            <div id="ruleCompCheckboxes" style="display:flex; flex-wrap:wrap; gap:10px;">
+                ${COMPONENTS.map(c => `<label><input type="checkbox" data-comp="${c}"> ${c}</label>`).join('')}
+            </div>
+            <button onclick="saveRule()" class="btn btn-modify-save" style="margin-top:10px; max-width:150px;">儲存規則</button>
+        </td></tr>
+    `;
+    
+    content += '</tbody>';
+    table.innerHTML = content;
 }
 
+function editRule(index) {
+    const r = ruleTable[index];
+    document.getElementById('ruleCatInput').value = r.cat;
+    document.getElementById('ruleCodeInput').value = r.code;
+    document.getElementById('currentRuleIndex').innerText = `(編輯 #${index})`;
+    document.getElementById('currentRuleIndex').dataset.index = index;
+    
+    document.querySelectorAll('#ruleCompCheckboxes input').forEach(input => {
+        const comp = input.dataset.comp;
+        input.checked = r.recipe[comp] || false;
+    });
+}
+
+function saveRule() {
+    const cat = document.getElementById('ruleCatInput').value.trim().toUpperCase();
+    const code = document.getElementById('ruleCodeInput').value.trim().toUpperCase();
+    const index = parseInt(document.getElementById('currentRuleIndex').dataset.index);
+    
+    if(!cat || !code) { showStatus("⚠️ 請輸入代碼", "red"); return; }
+
+    let newRecipe = {};
+    document.querySelectorAll('#ruleCompCheckboxes input').forEach(input => {
+        newRecipe[input.dataset.comp] = input.checked;
+    });
+
+    const newRule = { cat, code, recipe: newRecipe };
+    
+    if(index >= 0) {
+        // 編輯現有
+        ruleTable[index] = newRule;
+    } else {
+        // 新增或取代現有同代碼的
+        const existingIndex = ruleTable.findIndex(r => r.cat === cat && r.code === code);
+        if(existingIndex !== -1) {
+            if(!confirm(`代碼 ${cat}-${code} 已存在，要覆蓋嗎？`)) return;
+            ruleTable[existingIndex] = newRule;
+        } else {
+            ruleTable.push(newRule);
+        }
+    }
+
+    // 清空編輯區
+    document.getElementById('ruleCatInput').value = '';
+    document.getElementById('ruleCodeInput').value = '';
+    document.getElementById('currentRuleIndex').innerText = '(新增模式)';
+    document.getElementById('currentRuleIndex').dataset.index = -1;
+    document.querySelectorAll('#ruleCompCheckboxes input').forEach(input => input.checked = false);
+    
+    renderRuleTable();
+    showStatus("✅ 製程規則已儲存", "green");
+}
+
+/* --- 基準倍率管理 --- */
 function renderRatioTable() {
-    // 渲染基準倍率表格的邏輯 (保持不變)
-    document.getElementById('ratioTableBody').innerHTML = Object.keys(partRatios).map(p => `
-        <tr>
-            <td>${p}</td>
-            <td><input type="number" value="${partRatios[p]}" onchange="partRatios['${p}'] = parseFloat(this.value)" class="cost-input" step="0.1" style="width:70px;"></td>
-        </tr>
-    `).join('');
+    const tbody = document.getElementById('ratioTableBody');
+    tbody.innerHTML = Object.keys(DEFAULT_PARTS).map(p => `
+        <tr>
+            <td>${p}</td>
+            <td>
+                <input type="number" step="0.1" value="${partRatios[p] || 0}" onchange="partRatios['${p}']=parseFloat(this.value)||0;" class="cost-input" style="width:60px;">
+            </td>
+        </tr>
+    `).join('');
 }
 
 
-// 通用狀態顯示
+/* --- 全域操作與儲存 --- */
+function saveAllSettings() {
+    // 儲存所有設定 (使用 V35 版本號，方便未來升級)
+    localStorage.setItem('V35_Ratios', JSON.stringify(partRatios));
+    localStorage.setItem('V35_PaintList', JSON.stringify(paintList));
+    localStorage.setItem('V35_Rules', JSON.stringify(ruleTable));
+    localStorage.setItem('V35_BaseCosts', JSON.stringify(baseCosts));
+    localStorage.setItem('V35_TopcoatCosts', JSON.stringify(topcoatCosts));
+    
+    renderQueryControls(); // 更新查詢介面
+    recalculateFormula(); // 重算配方
+    showStatus("✅ 所有設定已成功儲存！", "#007aff");
+}
+
 function showStatus(message, color) {
-    const statusDiv = document.getElementById('statusMessage');
-    statusDiv.innerText = message;
-    statusDiv.style.color = color;
-    setTimeout(() => { statusDiv.innerText = ''; }, 3000);
+    const statusDiv = document.getElementById('statusMessage');
+    statusDiv.innerText = message;
+    statusDiv.style.color = color;
+    setTimeout(() => { statusDiv.innerText = ''; }, 3000);
 }
 
-
-// 確保在文件載入完成後初始化
-window.onload = init;
+// 啟動程式
+init();
 </script>
 </body>
 </html>
